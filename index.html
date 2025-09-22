@@ -4,25 +4,34 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Zápis na témy</title>
+<meta name="color-scheme" content="dark light" />
 <style>
-  :root{--bg:#0b1220;--card:#111827;--muted:#9ca3af;--text:#e5e7eb;--accent:#4f46e5;--ok:#22c55e;--err:#ef4444;}
-  body{margin:0;background:linear-gradient(180deg,#0b1220,#0f172a);color:var(--text);font:16px/1.4 system-ui,Segoe UI,Roboto,Arial}
+  :root{
+    --bg:#0b1220; --card:#111827; --muted:#94a3b8; --text:#e5e7eb;
+    --line:#1f2937; --accent:#4f46e5; --ok:#22c55e; --err:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b1220,#0f172a);color:var(--text);
+       font:16px/1.45 system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:860px;margin:40px auto;padding:0 16px}
   .card{background:var(--card);border-radius:16px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
-  h1{margin:.2em 0 6px;font-weight:700}
-  p{color:var(--muted)}
+  h1{margin:.2em 0 6px;font-weight:800;font-size:clamp(22px,4vw,28px)}
+  p{color:var(--muted);margin:0 0 12px}
   label{display:block;margin:14px 0 6px}
-  select,button{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #1f2937;background:#0b1220;color:var(--text)}
-  select:disabled{opacity:.6}
+  select,button{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line);
+                background:#0b1220;color:var(--text);outline:none}
+  select:disabled,button:disabled{opacity:.6}
+  button{cursor:pointer}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .topics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:16px 0}
-  .topic{padding:14px;border:1px solid #1f2937;border-radius:12px}
-  .full{opacity:.5}
-  .badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:#111;color:#ddd;margin-left:8px}
-  .ok{color:var(--ok)}
-  .err{color:var(--err)}
-  .hidden{display:none}
-  .footer{margin-top:10px;font-size:13px;color:#94a3b8}
+  @media (max-width:640px){ .row{grid-template-columns:1fr} }
+  .topics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:10px 0 16px}
+  .topic{padding:14px;border:1px solid var(--line);border-radius:12px;user-select:none}
+  .topic.full{opacity:.5}
+  .topic[data-selected="1"]{border-color:var(--accent)}
+  .badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:#0c1020;color:#ddd;margin-left:8px}
+  .footer{margin-top:10px;font-size:13px}
+  .ok{color:var(--ok)} .err{color:var(--err)}
+  .hint{font-size:12px;color:#7c8aa5;margin:-6px 0 12px}
 </style>
 </head>
 <body>
@@ -33,14 +42,15 @@
 
     <div class="row">
       <div>
-        <label>Moje meno</label>
+        <label for="me">Moje meno</label>
         <select id="me"></select>
       </div>
       <div>
-        <label>Partner/ka (voliteľné)</label>
+        <label for="partner">Partner/ka (voliteľné)</label>
         <select id="partner">
           <option value="">Som sám/sama</option>
         </select>
+        <div class="hint">Zobrazujú sa iba voľní študenti.</div>
       </div>
     </div>
 
@@ -53,16 +63,20 @@
 </div>
 
 <script>
-const API_URL = 'https://script.google.com/macros/s/AKfycbzP8qacPhJIdUtjxJlrKJzrcELUjqbjO7zXS5d1cOOUprQ5JoCgnwFak2TYVvhjPNARwg/exec'; // napr. https://script.google.com/macros/s/AKfycb.../exec
+/* === Nastav tvoju /exec URL z Apps Scriptu === */
+const API_URL = 'SEM-VLOZ-URL-TVojHO-WEBAPP'; // napr. https://script.google.com/macros/s/AKfycb.../exec
 
 let STATE = { students: [], topics: [] };
+let listenersBound = false;
 
 async function loadState(){
+  setMsg('Načítavam…');
   const r = await fetch(API_URL + '?action=init');
   const j = await r.json();
   if(!j.ok) throw new Error(j.error||'Chyba init');
   STATE = {students:j.students, topics:j.topics};
   render();
+  setMsg('');
 }
 
 function render(){
@@ -71,17 +85,33 @@ function render(){
   meSel.innerHTML = '';
   partnerSel.innerHTML = '<option value="">Som sám/sama</option>';
 
-  const freeStudents = STATE.students.filter(s => s.status !== 'TAKEN');
+  // len voľní študenti
+  const free = STATE.students.filter(s => s.status !== 'TAKEN');
+
+  if (free.length === 0){
+    meSel.disabled = true; partnerSel.disabled = true;
+    document.getElementById('submit').disabled = true;
+    setMsg('Žiadni voľní študenti na zápis.', false);
+  } else {
+    meSel.disabled = false; partnerSel.disabled = false;
+    document.getElementById('submit').disabled = false;
+  }
 
   // naplň "me"
-  freeStudents.forEach(s=>{
+  free.forEach(s=>{
     const o = document.createElement('option');
     o.value = s.name; o.textContent = s.name;
     meSel.appendChild(o);
   });
 
-  meSel.addEventListener('change', onMeChange);
-  onMeChange();
+  // partneri podľa aktuálneho výberu
+  fillPartners();
+
+  if (!listenersBound){
+    meSel.addEventListener('change', fillPartners);
+    document.getElementById('submit').addEventListener('click', onSubmit);
+    listenersBound = true;
+  }
 
   // topics
   const topicsDiv = document.getElementById('topics');
@@ -90,34 +120,26 @@ function render(){
     const div = document.createElement('div');
     div.className = 'topic' + (t.remaining<=0 ? ' full' : '');
     div.dataset.topic = t.topic;
-    div.innerHTML = `
-      <strong>${t.topic}</strong>
-      <span class="badge">Voľné: ${t.remaining}/${t.capacity}</span>
-    `;
-    if(t.remaining<=0){
-      div.title = 'Téma je plná';
-    } else {
+    div.innerHTML = `<strong>${t.topic}</strong>
+                     <span class="badge">Voľné: ${t.remaining}/${t.capacity}</span>`;
+    if (t.remaining > 0){
       div.style.cursor = 'pointer';
-      div.addEventListener('click', ()=>{
-        document.querySelectorAll('.topic').forEach(el=>el.style.borderColor='#1f2937');
-        div.style.borderColor = '#4f46e5';
-        div.dataset.selected = '1';
-        topicsDiv.querySelectorAll('.topic').forEach(el=>{ if(el!==div) delete el.dataset.selected; });
-      });
+      div.addEventListener('click', ()=>selectTopic(div));
+    } else {
+      div.title = 'Téma je plná';
     }
     topicsDiv.appendChild(div);
   });
 
-  // default select first available topic
+  // predvoliť prvú dostupnú tému
   const first = [...topicsDiv.querySelectorAll('.topic')].find(el => !el.classList.contains('full'));
-  if (first) first.click();
+  if (first) selectTopic(first);
 }
 
-function onMeChange(){
+function fillPartners(){
   const me = document.getElementById('me').value;
   const partnerSel = document.getElementById('partner');
   partnerSel.innerHTML = '<option value="">Som sám/sama</option>';
-
   const freeOthers = STATE.students.filter(s => s.status!=='TAKEN' && s.name!==me);
   freeOthers.forEach(s=>{
     const o = document.createElement('option');
@@ -126,48 +148,58 @@ function onMeChange(){
   });
 }
 
+function selectTopic(el){
+  document.querySelectorAll('.topic').forEach(e => e.dataset.selected='0');
+  el.dataset.selected = '1';
+  el.scrollIntoView({block:'nearest', behavior:'smooth'});
+}
+
 function selectedTopic(){
   const el = [...document.querySelectorAll('.topic')].find(e => e.dataset.selected==='1');
   return el ? el.dataset.topic : '';
 }
 
-function msg(txt, ok=false){
-  const m = document.getElementById('msg');
-  m.textContent = txt;
-  m.className = 'footer ' + (ok ? 'ok' : 'err');
+function setMsg(txt, ok){
+  const el = document.getElementById('msg');
+  el.textContent = txt || '';
+  el.className = 'footer ' + (ok===true ? 'ok' : ok===false ? 'err' : '');
 }
 
-document.getElementById('submit').addEventListener('click', async ()=>{
+async function onSubmit(){
   const me = document.getElementById('me').value;
   const partner = document.getElementById('partner').value || '';
   const topic = selectedTopic();
 
-  if(!me){ msg('Vyber svoje meno'); return; }
-  if(!topic){ msg('Vyber tému'); return; }
+  if(!me){ setMsg('Vyber svoje meno', false); return; }
+  if(!topic){ setMsg('Vyber tému', false); return; }
 
-  // optimistická deaktivácia
-  document.getElementById('submit').disabled = true;
+  const btn = document.getElementById('submit');
+  btn.disabled = true; setMsg('Odosielam…');
 
   try{
+    // URL-encoded POST (žiadny preflight)
+    const body = new URLSearchParams({ action:'register', student:me, partner, topic });
     const r = await fetch(API_URL, {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({action:'register', student:me, partner, topic})
+      headers:{ 'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8' },
+      body
     });
     const j = await r.json();
-    if(!j.ok){ msg(j.error||'Chyba pri zápise'); }
-    else{
-      msg('Úspešne zapísané. Ďakujeme!', true);
-      await loadState(); // refresh
+    if(!j.ok){
+      setMsg(j.error || 'Chyba pri zápise', false);
+    }else{
+      setMsg('Úspešne zapísané. Ďakujeme!', true);
+      await loadState(); // refresh stavu a kapacít
     }
   }catch(err){
-    msg('Sieťová chyba: '+err.message);
+    setMsg('Sieťová chyba: ' + err.message, false);
   }finally{
-    document.getElementById('submit').disabled = false;
+    btn.disabled = false;
   }
-});
+}
 
-loadState().catch(e=>msg('Chyba načítania: '+e.message));
+// štart
+loadState().catch(e=>setMsg('Chyba načítania: ' + e.message, false));
 </script>
 </body>
 </html>
