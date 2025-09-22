@@ -69,10 +69,36 @@ const API_URL = 'https://script.google.com/a/macros/stuba.sk/s/AKfycbzP8qacPhJId
 let STATE = { students: [], topics: [] };
 let listenersBound = false;
 
+/* -------- JSONP helper (bez CORS) -------- */
+function jsonp(params){
+  return new Promise((resolve, reject)=>{
+    const cbName = 'cb_' + Math.random().toString(36).slice(2);
+    const qs = new URLSearchParams({...params, callback: cbName});
+    const s = document.createElement('script');
+    const url = API_URL + '?' + qs.toString();
+
+    const timeout = setTimeout(()=>{
+      cleanup();
+      reject(new Error('JSONP timeout'));
+    }, 15000);
+
+    function cleanup(){
+      clearTimeout(timeout);
+      delete window[cbName];
+      s.remove();
+    }
+
+    window[cbName] = (data)=>{ cleanup(); resolve(data); };
+    s.onerror = ()=>{ cleanup(); reject(new Error('JSONP network error')); };
+    s.src = url;
+    document.body.appendChild(s);
+  });
+}
+
+/* -------------- UI -------------- */
 async function loadState(){
   setMsg('Načítavam…');
-  const r = await fetch(API_URL + '?action=init');
-  const j = await r.json();
+  const j = await jsonp({action:'init'});
   if(!j.ok) throw new Error(j.error||'Chyba init');
   STATE = {students:j.students, topics:j.topics};
   render();
@@ -177,14 +203,8 @@ async function onSubmit(){
   btn.disabled = true; setMsg('Odosielam…');
 
   try{
-    // URL-encoded POST (žiadny preflight)
-    const body = new URLSearchParams({ action:'register', student:me, partner, topic });
-    const r = await fetch(API_URL, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8' },
-      body
-    });
-    const j = await r.json();
+    // registrácia cez JSONP (GET)
+    const j = await jsonp({action:'register', student:me, partner, topic});
     if(!j.ok){
       setMsg(j.error || 'Chyba pri zápise', false);
     }else{
