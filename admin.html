@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin – Zápis na témy</title>
+<style>
+  body{margin:0;background:#0f172a;color:#e5e7eb;font:15px/1.4 system-ui,Segoe UI,Roboto,Arial}
+  .wrap{max-width:1000px;margin:30px auto;padding:0 16px}
+  .card{background:#111827;border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  h1{margin:.2em 0 12px}
+  table{width:100%;border-collapse:collapse}
+  th,td{border-bottom:1px solid #1f2937;padding:8px 10px;text-align:left}
+  th{color:#a5b4fc}
+  .toolbar{display:flex;gap:10px;margin-bottom:12px}
+  input,button{padding:10px 12px;border-radius:10px;border:1px solid #1f2937;background:#0b1220;color:#e5e7eb}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Admin – Zápis na témy</h1>
+    <div class="toolbar">
+      <input id="key" type="password" placeholder="Admin kľúč" />
+      <button id="load">Načítať</button>
+      <button id="csv">CSV export</button>
+    </div>
+    <div class="grid">
+      <div>
+        <h3>Kapacity</h3>
+        <table id="topics"><thead><tr><th>Téma</th><th>Kapacita</th><th>Obsadené</th><th>Voľné</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div>
+        <h3>Tímy</h3>
+        <table id="teams"><thead><tr><th>Tím</th><th>Téma</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbzP8qacPhJIdUtjxJlrKJzrcELUjqbjO7zXS5d1cOOUprQ5JoCgnwFak2TYVvhjPNARwg/exec';
+
+async function loadAdmin(){
+  const key = document.getElementById('key').value.trim();
+  if(!key){ alert('Zadaj admin kľúč'); return; }
+  const r = await fetch(API_URL + '?action=admin&key='+encodeURIComponent(key));
+  const j = await r.json();
+  if(!j.ok){ alert(j.error||'Chyba'); return; }
+
+  // Topics
+  const tb = document.querySelector('#topics tbody');
+  tb.innerHTML = '';
+  j.topics.forEach(t=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${t.topic}</td><td>${t.capacity}</td><td>${t.taken}</td><td>${t.remaining}</td>`;
+    tb.appendChild(tr);
+  });
+
+  // Teams
+  const tt = document.querySelector('#teams tbody');
+  tt.innerHTML = '';
+  j.teams.forEach(t=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${t.team}</td><td>${t.topic}</td>`;
+    tt.appendChild(tr);
+  });
+}
+
+async function exportCSV(){
+  const key = document.getElementById('key').value.trim();
+  if(!key){ alert('Zadaj admin kľúč'); return; }
+  const r = await fetch(API_URL + '?action=csv&key='+encodeURIComponent(key));
+  const text = await r.text();
+  const blob = new Blob([text], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'zapis_teams.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('load').addEventListener('click', loadAdmin);
+document.getElementById('csv').addEventListener('click', exportCSV);
+</script>
+</body>
+</html>

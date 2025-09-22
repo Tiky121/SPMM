@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Zápis na témy</title>
+<style>
+  :root{--bg:#0b1220;--card:#111827;--muted:#9ca3af;--text:#e5e7eb;--accent:#4f46e5;--ok:#22c55e;--err:#ef4444;}
+  body{margin:0;background:linear-gradient(180deg,#0b1220,#0f172a);color:var(--text);font:16px/1.4 system-ui,Segoe UI,Roboto,Arial}
+  .wrap{max-width:860px;margin:40px auto;padding:0 16px}
+  .card{background:var(--card);border-radius:16px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  h1{margin:.2em 0 6px;font-weight:700}
+  p{color:var(--muted)}
+  label{display:block;margin:14px 0 6px}
+  select,button{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #1f2937;background:#0b1220;color:var(--text)}
+  select:disabled{opacity:.6}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .topics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:16px 0}
+  .topic{padding:14px;border:1px solid #1f2937;border-radius:12px}
+  .full{opacity:.5}
+  .badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:#111;color:#ddd;margin-left:8px}
+  .ok{color:var(--ok)}
+  .err{color:var(--err)}
+  .hidden{display:none}
+  .footer{margin-top:10px;font-size:13px;color:#94a3b8}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Zápis na témy</h1>
+    <p>Vyber svoje meno, prípadne partnera (alebo nechaj „Som sám/sama“), a potom zvoľ jednu tému. Jeden tím = 1 miesto.</p>
+
+    <div class="row">
+      <div>
+        <label>Moje meno</label>
+        <select id="me"></select>
+      </div>
+      <div>
+        <label>Partner/ka (voliteľné)</label>
+        <select id="partner">
+          <option value="">Som sám/sama</option>
+        </select>
+      </div>
+    </div>
+
+    <label>Téma</label>
+    <div class="topics" id="topics"></div>
+
+    <button id="submit">Zapísať</button>
+    <p id="msg" class="footer"></p>
+  </div>
+</div>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbzP8qacPhJIdUtjxJlrKJzrcELUjqbjO7zXS5d1cOOUprQ5JoCgnwFak2TYVvhjPNARwg/exec'; // napr. https://script.google.com/macros/s/AKfycb.../exec
+
+let STATE = { students: [], topics: [] };
+
+async function loadState(){
+  const r = await fetch(API_URL + '?action=init');
+  const j = await r.json();
+  if(!j.ok) throw new Error(j.error||'Chyba init');
+  STATE = {students:j.students, topics:j.topics};
+  render();
+}
+
+function render(){
+  const meSel = document.getElementById('me');
+  const partnerSel = document.getElementById('partner');
+  meSel.innerHTML = '';
+  partnerSel.innerHTML = '<option value="">Som sám/sama</option>';
+
+  const freeStudents = STATE.students.filter(s => s.status !== 'TAKEN');
+
+  // naplň "me"
+  freeStudents.forEach(s=>{
+    const o = document.createElement('option');
+    o.value = s.name; o.textContent = s.name;
+    meSel.appendChild(o);
+  });
+
+  meSel.addEventListener('change', onMeChange);
+  onMeChange();
+
+  // topics
+  const topicsDiv = document.getElementById('topics');
+  topicsDiv.innerHTML = '';
+  STATE.topics.forEach(t=>{
+    const div = document.createElement('div');
+    div.className = 'topic' + (t.remaining<=0 ? ' full' : '');
+    div.dataset.topic = t.topic;
+    div.innerHTML = `
+      <strong>${t.topic}</strong>
+      <span class="badge">Voľné: ${t.remaining}/${t.capacity}</span>
+    `;
+    if(t.remaining<=0){
+      div.title = 'Téma je plná';
+    } else {
+      div.style.cursor = 'pointer';
+      div.addEventListener('click', ()=>{
+        document.querySelectorAll('.topic').forEach(el=>el.style.borderColor='#1f2937');
+        div.style.borderColor = '#4f46e5';
+        div.dataset.selected = '1';
+        topicsDiv.querySelectorAll('.topic').forEach(el=>{ if(el!==div) delete el.dataset.selected; });
+      });
+    }
+    topicsDiv.appendChild(div);
+  });
+
+  // default select first available topic
+  const first = [...topicsDiv.querySelectorAll('.topic')].find(el => !el.classList.contains('full'));
+  if (first) first.click();
+}
+
+function onMeChange(){
+  const me = document.getElementById('me').value;
+  const partnerSel = document.getElementById('partner');
+  partnerSel.innerHTML = '<option value="">Som sám/sama</option>';
+
+  const freeOthers = STATE.students.filter(s => s.status!=='TAKEN' && s.name!==me);
+  freeOthers.forEach(s=>{
+    const o = document.createElement('option');
+    o.value = s.name; o.textContent = s.name;
+    partnerSel.appendChild(o);
+  });
+}
+
+function selectedTopic(){
+  const el = [...document.querySelectorAll('.topic')].find(e => e.dataset.selected==='1');
+  return el ? el.dataset.topic : '';
+}
+
+function msg(txt, ok=false){
+  const m = document.getElementById('msg');
+  m.textContent = txt;
+  m.className = 'footer ' + (ok ? 'ok' : 'err');
+}
+
+document.getElementById('submit').addEventListener('click', async ()=>{
+  const me = document.getElementById('me').value;
+  const partner = document.getElementById('partner').value || '';
+  const topic = selectedTopic();
+
+  if(!me){ msg('Vyber svoje meno'); return; }
+  if(!topic){ msg('Vyber tému'); return; }
+
+  // optimistická deaktivácia
+  document.getElementById('submit').disabled = true;
+
+  try{
+    const r = await fetch(API_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'register', student:me, partner, topic})
+    });
+    const j = await r.json();
+    if(!j.ok){ msg(j.error||'Chyba pri zápise'); }
+    else{
+      msg('Úspešne zapísané. Ďakujeme!', true);
+      await loadState(); // refresh
+    }
+  }catch(err){
+    msg('Sieťová chyba: '+err.message);
+  }finally{
+    document.getElementById('submit').disabled = false;
+  }
+});
+
+loadState().catch(e=>msg('Chyba načítania: '+e.message));
+</script>
+</body>
+</html>
